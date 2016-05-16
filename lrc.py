@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import sys
 
@@ -131,15 +132,24 @@ class Interpreter(object):
                 }
 
     def run(self, memory):
-        while True:
+        loop = asyncio.get_event_loop()
+
+        @asyncio.coroutine
+        def tick():
             data = memory.read(memory.ptr)
             if data == 0:
-                break
+                loop.call_soon(loop.stop)
+                return
 
             opcode, data = self.interpret(data)
             self.opcodes[opcode](memory, data)
 
             memory.ptr += 1
+
+            loop.create_task(tick())
+
+        loop.create_task(tick())
+        loop.run_forever()
 
     def interpret(self, data):
         mask_ins = 2**4 - 1
