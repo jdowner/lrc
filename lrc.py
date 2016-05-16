@@ -83,9 +83,19 @@ class BinaryOp(BaseOp):
         return self.opcode + (self.lo << 4) + (self.hi << 20)
 
 
+class Store(UnaryOp):
+    MNEUMONIC = "STA"
+    OPCODE = 1
+
+
+class Load(UnaryOp):
+    MNEUMONIC = "LDA"
+    OPCODE = 2
+
+
 class Increment(UnaryOp):
     MNEUMONIC = "INC"
-    OPCODE = 2
+    OPCODE = 3
 
 
 class Decrement(UnaryOp):
@@ -106,16 +116,6 @@ class Subtraction(BinaryOp):
 class Jump(UnaryOp):
     MNEUMONIC = "JMP"
     OPCODE = 7
-
-
-class Store(UnaryOp):
-    MNEUMONIC = "STA"
-    OPCODE = 3
-
-
-class Load(UnaryOp):
-    MNEUMONIC = "LDA"
-    OPCODE = 1
 
 
 class Interpreter(object):
