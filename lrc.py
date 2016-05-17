@@ -141,10 +141,17 @@ class Interpreter(object):
         loop = asyncio.get_event_loop()
 
         @asyncio.coroutine
+        def shutdown():
+            for task in asyncio.Task.all_tasks():
+                task.cancel()
+
+            loop.call_soon(loop.stop)
+
+        @asyncio.coroutine
         def tick():
             data = memory.read(memory.ptr)
             if data == 0:
-                loop.call_soon(loop.stop)
+                loop.create_task(shutdown())
                 return
 
             opcode, data = self.interpret(data)
