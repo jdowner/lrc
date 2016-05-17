@@ -4,8 +4,17 @@ import argparse
 import asyncio
 import logging
 import sys
+import traceback
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('lrc')
+
+
+class UnrecognizedInstruction(Exception):
+    pass
+
+
+class Terminate(Exception):
+    pass
 
 
 class Memory(object):
@@ -144,6 +153,7 @@ class Move(BinaryOp):
 
 class Interpreter(object):
     def __init__(self):
+        self.log = logging.getLogger('lrc.interpreter')
         self.opcodes = {
                 Load.OPCODE:        self._load,
                 Increment.OPCODE:   self._increment,
@@ -156,6 +166,7 @@ class Interpreter(object):
                 }
 
     def run(self, memory):
+        self.log.info('run start')
         loop = asyncio.get_event_loop()
 
         @asyncio.coroutine
@@ -167,88 +178,89 @@ class Interpreter(object):
 
         @asyncio.coroutine
         def tick():
-            data = memory.read(memory.ptr)
-            if data == 0:
+            self.log.debug('tick')
+
+            try:
+                data = memory.read(memory.ptr)
+                if data == 0:
+                    raise Terminate()
+
+                opcode, lo, hi = self.interpret(data)
+                self.opcodes[opcode](memory, lo, hi)
+
+                memory.ptr += 1
+
+                loop.create_task(tick())
+
+            except Terminate:
                 loop.create_task(shutdown())
-                return
 
-            opcode, data = self.interpret(data)
-            self.opcodes[opcode](memory, data)
-
-            memory.ptr += 1
-
-            loop.create_task(tick())
+            except Exception:
+                traceback.print_exc()
+                loop.create_task(shutdown())
 
         loop.create_task(tick())
         loop.run_forever()
 
+        self.log.info('run stop')
+
     def interpret(self, data):
         mask_ins = 2**4 - 1
-        mask_dat = 2**32 - 1
+        mask_low = 2**16 - 1
 
+        # retrieve the opcode
         opcode = data & mask_ins
-        data = (data >> 4) & mask_dat
+        data = data >> 4
 
-        return opcode, data
+        # retrieve the lo and hi data
+        lo = data & mask_low
+        hi = (data >> 16) & mask_low
 
-    def _load(self, memory, data):
-        mask = 2**16 - 1
-        lo = data & mask
+        return opcode, lo, hi
+
+    def _load(self, memory, lo, hi):
+        self.log.debug("LDA {}".format(lo))
         memory.write_eax(lo)
 
-    def _increment(self, memory, data):
-        mask = 2**16 - 1
-        lo = data & mask
-
+    def _increment(self, memory, lo, hi):
+        self.log.debug("INC {}".format(lo))
         val = memory.read(lo)
         memory.write(lo, val + 1)
 
-    def _decrement(self, memory, data):
-        mask = 2**16 - 1
-        lo = data & mask
-
+    def _decrement(self, memory, lo, hi):
+        self.log.debug("DEC {}".format(lo))
         val = memory.read(lo)
         memory.write(lo, val - 1)
 
-    def _store(self, memory, data):
-        mask = 2**16 - 1
-        lo = data & mask
-
+    def _store(self, memory, lo, hi):
+        self.log.debug("STA {}".format(lo))
         val = memory.read_eax()
         memory.write(lo, val)
 
-    def _addition(self, memory, data):
-        mask = 2**16 - 1
-        lo = data & mask
-        hi = (data >> 16) & mask
-
+    def _addition(self, memory, lo, hi):
+        self.log.debug("ADD {} {}".format(lo, hi))
         val = (memory.read(lo) + memory.read(hi)) % 2**16
         memory.write(lo, val)
 
-    def _subtraction(self, memory, data):
-        mask = 2**16 - 1
-        lo = data & mask
-        hi = (data >> 16) & mask
-
+    def _subtraction(self, memory, lo, hi):
+        self.log.debug("SUB {} {}".format(lo, hi))
         val = (memory.read(lo) - hi) % 2**16
         memory.write(lo, val)
 
-    def _jump(self, memory, data):
-        mask = 2**16 - 1
-        lo = data & mask
+    def _jump(self, memory, lo, hi):
+        self.log.debug("JMP {}".format(lo))
         memory.ptr = lo - 1
 
-    def _move(self, memory, data):
-        mask = 2**16 - 1
-        lo = data & mask
-        hi = (data >> 16) & mask
-
+    def _move(self, memory, lo, hi):
+        self.log.debug("MOV {} {}".format(lo, hi))
         val = memory.read(hi)
         memory.write(lo, val)
 
 
 class Compiler(object):
     def compile(self, program):
+        log = logging.getLogger('lrc.compiler')
+
         instructions = list()
         for line in program.splitlines():
             if line and not line.startswith('#'):
@@ -257,21 +269,25 @@ class Compiler(object):
                 if mneumonic == 'LDA':
                     value = int(data)
                     instructions.append(Load(value))
+                    log.debug('LDA {}'.format(value))
                     continue
 
                 if mneumonic == 'STA':
                     value = int(data)
                     instructions.append(Store(value))
+                    log.debug('STA {}'.format(value))
                     continue
 
                 if mneumonic == "INC":
                     value = int(data)
                     instructions.append(Increment(value))
+                    log.debug('INC {}'.format(value))
                     continue
 
                 if mneumonic == "DEC":
                     value = int(data)
                     instructions.append(Decrement(value))
+                    log.debug('DEC {}'.format(value))
                     continue
 
                 if mneumonic == "ADD":
@@ -279,6 +295,7 @@ class Compiler(object):
                     value1 = int(value1)
                     value2 = int(value2)
                     instructions.append(Addition(value1, value2))
+                    log.debug('ADD {} {}'.format(value1, value2))
                     continue
 
                 if mneumonic == "SUB":
@@ -286,11 +303,13 @@ class Compiler(object):
                     value1 = int(value1)
                     value2 = int(value2)
                     instructions.append(Subtraction(value1, value2))
+                    log.debug('SUB {} {}'.format(value1, value2))
                     continue
 
                 if mneumonic == "JMP":
                     value = int(data)
                     instructions.append(Jump(value))
+                    log.debug('JMP {}'.format(value))
                     continue
 
                 if mneumonic == "MOV":
@@ -298,7 +317,10 @@ class Compiler(object):
                     value1 = int(value1)
                     value2 = int(value2)
                     instructions.append(Move(value1, value2))
+                    log.debug('MOV {} {}'.format(value1, value2))
                     continue
+
+                raise UnrecognizedInstruction()
 
         return instructions
 
@@ -307,8 +329,17 @@ def main(argv=sys.argv[1:]):
     parser = argparse.ArgumentParser()
     parser.add_argument("--file", "-f")
     parser.add_argument("--dump", "-d", action='store_true')
+    parser.add_argument("--log-level", "-l", choices=('debug', 'info', 'error'), default='error')
 
     args = parser.parse_args(argv)
+
+    logging_levels = {
+            'debug': logging.DEBUG,
+            'error': logging.ERROR,
+            'info': logging.INFO,
+            }
+
+    logging.getLogger('lrc').setLevel(logging_levels[args.log_level])
 
     program = open(args.file).read()
 
@@ -333,6 +364,5 @@ def main(argv=sys.argv[1:]):
             print('>', addr)
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.ERROR)
-
+    logging.basicConfig()
     main()
