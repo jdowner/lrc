@@ -197,7 +197,7 @@ class Interpreter(object):
         lo = data & mask
         hi = (data >> 16) & mask
 
-        val = (memory.read(lo) + hi) % 2**16
+        val = (memory.read(lo) + memory.read(hi)) % 2**16
         memory.write(lo, val)
 
     def _subtraction(self, memory, data):
