@@ -119,6 +119,11 @@ class Jump(UnaryOp):
     OPCODE = 7
 
 
+class Move(BinaryOp):
+    MNEUMONIC = "MOV"
+    OPCODE = 8
+
+
 class Interpreter(object):
     def __init__(self):
         self.opcodes = {
@@ -129,6 +134,7 @@ class Interpreter(object):
                 Addition.OPCODE:    self._addition,
                 Subtraction.OPCODE: self._subtraction,
                 Jump.OPCODE:        self._jump,
+                Move.OPCODE:        self._move,
                 }
 
     def run(self, memory):
@@ -207,6 +213,15 @@ class Interpreter(object):
         mask = 2**16 - 1
         lo = data & mask
         memory.ptr = lo - 1
+
+    def _move(self, memory, data):
+        mask = 2**16 - 1
+        lo = data & mask
+        hi = (data >> 16) & mask
+
+        val = memory.read(hi)
+        memory.write(lo, val)
+
 
 
 def main(argv=sys.argv[1:]):
