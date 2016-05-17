@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+
+import argparse
 import asyncio
 import logging
 import sys
@@ -301,22 +304,33 @@ class Compiler(object):
 
 
 def main(argv=sys.argv[1:]):
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--file", "-f")
+    parser.add_argument("--dump", "-d", action='store_true')
+
+    args = parser.parse_args(argv)
+
+    program = open(args.file).read()
+
     memory = Memory()
 
-    memory.write(Memory.ADDR_PRG + 0, Increment(5).value)
-    memory.write(Memory.ADDR_PRG + 1, Store(5,6).value)
-    memory.write(Memory.ADDR_PRG + 2, Increment(6).value)
-    memory.write(Memory.ADDR_PRG + 3, Decrement(5).value)
+    stdout = TerminalStdout(memory)
+    loop = asyncio.get_event_loop()
+    loop.create_task(stdout.flush())
 
-    memory.write(Memory.ADDR_PRG + 4, Jump(8).value)
-    memory.write(Memory.ADDR_PRG + 8, Addition(6,2).value)
+    compiler = Compiler()
+    instructions = compiler.compile(program)
+
+    for index, instruction in zip(range(len(instructions)), instructions):
+        memory.write(Memory.ADDR_PRG + index, instruction.value)
 
     interpreter = Interpreter()
     interpreter.run(memory)
 
-    for addr in memory:
-        print(addr)
-
+    if args.dump:
+        print()
+        for addr in memory:
+            print('>', addr)
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.ERROR)
