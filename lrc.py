@@ -244,6 +244,61 @@ class Interpreter(object):
         memory.write(lo, val)
 
 
+class Compiler(object):
+    def compile(self, program):
+        instructions = list()
+        for line in program.splitlines():
+            if line and not line.startswith('#'):
+                mneumonic, data = line.split(' ', 1)
+
+                if mneumonic == 'LDA':
+                    value = int(data)
+                    instructions.append(Load(value))
+                    continue
+
+                if mneumonic == 'STA':
+                    value = int(data)
+                    instructions.append(Store(value))
+                    continue
+
+                if mneumonic == "INC":
+                    value = int(data)
+                    instructions.append(Increment(value))
+                    continue
+
+                if mneumonic == "DEC":
+                    value = int(data)
+                    instructions.append(Decrement(value))
+                    continue
+
+                if mneumonic == "ADD":
+                    value1, value2 = data.split()
+                    value1 = int(value1)
+                    value2 = int(value2)
+                    instructions.append(Addition(value1, value2))
+                    continue
+
+                if mneumonic == "SUB":
+                    value1, value2 = data.split()
+                    value1 = int(value1)
+                    value2 = int(value2)
+                    instructions.append(Subtraction(value1, value2))
+                    continue
+
+                if mneumonic == "JMP":
+                    value = int(data)
+                    instructions.append(Jump(value))
+                    continue
+
+                if mneumonic == "MOV":
+                    value1, value2 = data.split()
+                    value1 = int(value1)
+                    value2 = int(value2)
+                    instructions.append(Move(value1, value2))
+                    continue
+
+        return instructions
+
 
 def main(argv=sys.argv[1:]):
     memory = Memory()
