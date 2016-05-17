@@ -59,16 +59,26 @@ class Memory(object):
 class TerminalStdout(object):
     def __init__(self, memory):
         self.memory = memory
+        self.loop = asyncio.get_event_loop()
+        self.buf = list()
 
     @asyncio.coroutine
-    def flush(self):
-        val = self.memory.read(0)
-        if val != 0:
-            sys.stdout.write(chr(val))
-            self.memory.write(0, 0)
+    def listen(self):
+        try:
+            val = self.memory.read(0)
+            if val != 0:
+                self.buf.append(val)
+                self.memory.write(0, 0)
+                self.loop.call_soon(self.flush)
 
-        loop = asyncio.get_event_loop()
-        loop.create_task(self.flush())
+            self.loop.create_task(self.listen())
+
+        finally:
+            self.flush()
+
+    def flush(self):
+        sys.stdout.write(''.join(map(chr, self.buf)))
+        self.buf = list()
 
 
 class BaseOp(object):
@@ -347,7 +357,7 @@ def main(argv=sys.argv[1:]):
 
     stdout = TerminalStdout(memory)
     loop = asyncio.get_event_loop()
-    loop.create_task(stdout.flush())
+    loop.create_task(stdout.listen())
 
     compiler = Compiler()
     instructions = compiler.compile(program)
