@@ -44,6 +44,21 @@ class Memory(object):
         return self.read(25)
 
 
+class TerminalStdout(object):
+    def __init__(self, memory):
+        self.memory = memory
+
+    @asyncio.coroutine
+    def flush(self):
+        val = self.memory.read(0)
+        if val != 0:
+            sys.stdout.write(chr(val))
+            self.memory.write(0, 0)
+
+        loop = asyncio.get_event_loop()
+        loop.create_task(self.flush())
+
+
 class BaseOp(object):
     def __init__(self, lo=0, hi=0):
         self._lo = lo
