@@ -188,10 +188,9 @@ class Interpreter(object):
     def _store(self, memory, data):
         mask = 2**16 - 1
         lo = data & mask
-        hi = (data >> 16) & mask
 
-        val = memory.read(lo)
-        memory.write(hi, val)
+        val = memory.read_eax()
+        memory.write(lo, val)
 
     def _addition(self, memory, data):
         mask = 2**16 - 1
