@@ -163,6 +163,21 @@ class Move(BinaryOp):
     OPCODE = 8
 
 
+class Compare(BinaryOp):
+    MNEUMONIC = "CMP"
+    OPCODE = 9
+
+
+class BranchAbove(UnaryOp):
+    MNEUMONIC = "BRA"
+    OPCODE = 10
+
+
+class BranchBelow(UnaryOp):
+    MNEUMONIC = "BRB"
+    OPCODE = 11
+
+
 class Interpreter(object):
     def __init__(self):
         self.log = logging.getLogger('lrc.interpreter')
@@ -175,6 +190,9 @@ class Interpreter(object):
                 Subtraction.OPCODE: self._subtraction,
                 Jump.OPCODE:        self._jump,
                 Move.OPCODE:        self._move,
+                Compare.OPCODE:     self._compare,
+                BranchAbove.OPCODE: self._branch_above,
+                BranchBelow.OPCODE: self._branch_below,
                 }
 
     def run(self, memory):
@@ -268,6 +286,22 @@ class Interpreter(object):
         val = memory.read(hi)
         memory.write(lo, val)
 
+    def _compare(self, memory, lo, hi):
+        self.log.debug("CMP {} {}".format(lo, hi))
+        vlo = memory.read(lo)
+        vhi = memory.read(hi)
+        memory.flag_cmp = 1 if vlo < vhi else 0
+
+    def _branch_above(self, memory, lo, hi):
+        self.log.debug("BRA {} {}".format(lo, hi))
+        if memory.flag_cmp == 0:
+            memory.ptr = lo - 1
+
+    def _branch_below(self, memory, lo, hi):
+        self.log.debug("BRB {} {}".format(lo, hi))
+        if memory.flag_cmp == 1:
+            memory.ptr = lo - 1
+
 
 class Compiler(object):
     def compile(self, program):
@@ -330,6 +364,26 @@ class Compiler(object):
                     value2 = int(value2)
                     instructions.append(Move(value1, value2))
                     log.debug('MOV {} {}'.format(value1, value2))
+                    continue
+
+                if mneumonic == "CMP":
+                    value1, value2 = data.split()
+                    value1 = int(value1)
+                    value2 = int(value2)
+                    instructions.append(Compare(value1, value2))
+                    log.debug('CMP {} {}'.format(value1, value2))
+                    continue
+
+                if mneumonic == "BRA":
+                    value = int(data)
+                    instructions.append(BranchAbove(value))
+                    log.debug('BRA {}'.format(value))
+                    continue
+
+                if mneumonic == "BRB":
+                    value = int(data)
+                    instructions.append(BranchBelow(value))
+                    log.debug('BRB {}'.format(value))
                     continue
 
                 raise UnrecognizedInstruction()
