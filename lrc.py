@@ -178,6 +178,11 @@ class BranchBelow(UnaryOp):
     OPCODE = 11
 
 
+class Null(NullaryOp):
+    MNEUMONIC = "NUL"
+    OPCODE = 12
+
+
 class Interpreter(object):
     def __init__(self):
         self.log = logging.getLogger('lrc.interpreter')
@@ -193,6 +198,7 @@ class Interpreter(object):
                 Compare.OPCODE:     self._compare,
                 BranchAbove.OPCODE: self._branch_above,
                 BranchBelow.OPCODE: self._branch_below,
+                Null.OPCODE:        self._null,
                 }
 
     def run(self, memory):
@@ -302,6 +308,9 @@ class Interpreter(object):
         if memory.flag_cmp == 1:
             memory.ptr = lo - 1
 
+    def _null(self, memory, lo, hi):
+        self.log.debug("NUL")
+
 
 class Compiler(object):
     def compile(self, program):
@@ -384,6 +393,11 @@ class Compiler(object):
                     value = int(data)
                     instructions.append(BranchBelow(value))
                     log.debug('BRB {}'.format(value))
+                    continue
+
+                if mneumonic == "NUL":
+                    instructions.append(Null())
+                    log.debug('NUL')
                     continue
 
                 raise UnrecognizedInstruction()
