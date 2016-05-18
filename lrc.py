@@ -17,6 +17,10 @@ class Terminate(Exception):
     pass
 
 
+class SegmentationFault(Exception):
+    pass
+
+
 class Memory(object):
     ADDR_IO  =  0 # start of memory reserved for device I/O
     ADDR_REG = 17 # start of memory reserved for registers
@@ -223,14 +227,13 @@ class Interpreter(object):
             self.log.debug('tick')
 
             try:
-                data = memory.read(memory.ptr)
-                if data == 0:
-                    raise Terminate()
-
-                opcode, lo, hi = self.interpret(data)
+                opcode, lo, hi = self.interpret(memory.read(memory.ptr))
                 self.opcodes[opcode](memory, lo, hi)
 
                 memory.ptr += 1
+
+                if memory.ptr > len(memory):
+                    raise SegmentationFault()
 
                 loop.create_task(tick())
 
