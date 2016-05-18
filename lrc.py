@@ -44,10 +44,10 @@ class Memory(object):
         self._ram[index] = value
 
     def read_eax(self):
-        return self.read(17)
+        return self.read(Memory.ADDR_REG)
 
     def write_eax(self, value):
-        self.write(17, value)
+        self.write(Memory.ADDR_REG, value)
 
     def set_flag(self, val):
         self.write(25, val)
