@@ -49,11 +49,13 @@ class Memory(object):
     def write_eax(self, value):
         self.write(Memory.ADDR_REG, value)
 
-    def set_flag(self, val):
-        self.write(25, val)
+    @property
+    def flag_cmp(self):
+        return self.read(Memory.ADDR_FLG)
 
-    def flag(self):
-        return self.read(25)
+    @flag_cmp.setter
+    def flag_cmp(self, val):
+        self.write(Memory.ADDR_FLG, val)
 
 
 class TerminalStdout(object):
