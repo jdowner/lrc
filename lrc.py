@@ -460,7 +460,10 @@ def main(argv=sys.argv[1:]):
     if args.dump:
         print()
         for index, addr in zip(range(len(memory)), memory):
-            print('[{0:#06x}] {1:#06x}'.format(index, addr))
+            mask = 2**16 - 1
+            lo = mask & addr
+            hi = (addr >> 16) & mask
+            print('[{0:#06x}] {1:04x} {2:04x}'.format(index, hi, lo))
 
 if __name__ == "__main__":
     logging.basicConfig()
