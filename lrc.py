@@ -123,6 +123,11 @@ class BinaryOp(BaseOp):
         return self.opcode + (self.lo << 4) + (self.hi << 20)
 
 
+class Null(NullaryOp):
+    MNEUMONIC = "NUL"
+    OPCODE = 0
+
+
 class Store(UnaryOp):
     MNEUMONIC = "STA"
     OPCODE = 1
@@ -178,8 +183,8 @@ class BranchBelow(UnaryOp):
     OPCODE = 11
 
 
-class Null(NullaryOp):
-    MNEUMONIC = "NUL"
+class Halt(NullaryOp):
+    MNEUMONIC = "HLT"
     OPCODE = 12
 
 
@@ -199,6 +204,7 @@ class Interpreter(object):
                 BranchAbove.OPCODE: self._branch_above,
                 BranchBelow.OPCODE: self._branch_below,
                 Null.OPCODE:        self._null,
+                Halt.OPCODE:        self._halt,
                 }
 
     def run(self, memory):
@@ -311,6 +317,10 @@ class Interpreter(object):
     def _null(self, memory, lo, hi):
         self.log.debug("NUL")
 
+    def _halt(self, memory, lo, hi):
+        self.log.debug("HLT")
+        raise Terminate()
+
 
 class Compiler(object):
     def compile(self, program):
@@ -319,7 +329,8 @@ class Compiler(object):
         instructions = list()
         for line in program.splitlines():
             if line and not line.startswith('#'):
-                mneumonic, data = line.split(' ', 1)
+                mneumonic = line[:3]
+                data = line[3:]
 
                 if mneumonic == 'LDA':
                     value = int(data)
@@ -398,6 +409,11 @@ class Compiler(object):
                 if mneumonic == "NUL":
                     instructions.append(Null())
                     log.debug('NUL')
+                    continue
+
+                if mneumonic == "HLT":
+                    instructions.append(Halt())
+                    log.debug('HLT')
                     continue
 
                 raise UnrecognizedInstruction()
