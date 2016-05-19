@@ -444,15 +444,15 @@ def main(argv=sys.argv[1:]):
 
     memory = Memory()
 
-    stdout = TerminalStdout(memory)
-    loop = asyncio.get_event_loop()
-    loop.create_task(stdout.listen())
-
     compiler = Compiler()
     instructions = compiler.compile(program)
 
     for index, instruction in zip(range(len(instructions)), instructions):
         memory.write(Memory.ADDR_PRG + index, instruction.value)
+
+    stdout = TerminalStdout(memory)
+    loop = asyncio.get_event_loop()
+    loop.create_task(stdout.listen())
 
     interpreter = Interpreter()
     interpreter.run(memory)
