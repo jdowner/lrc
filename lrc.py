@@ -3,6 +3,8 @@
 import argparse
 import asyncio
 import logging
+import logging.config
+import os
 import sys
 import traceback
 
@@ -469,5 +471,11 @@ def main(argv=sys.argv[1:]):
             print('[{0:#06x}] {1:04x} {2:04x}'.format(index, hi, lo))
 
 if __name__ == "__main__":
-    logging.basicConfig()
+    cfg = os.path.expandvars("${XDG_CONFIG_HOME}/lrc/logging.cfg")
+    if os.path.exists(os.path.exists(cfg)):
+        logging.config.fileConfig(cfg)
+
+    else:
+        logging.basicConfig()
+
     main()
