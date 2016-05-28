@@ -65,6 +65,7 @@ class Memory(object):
 class TerminalStdout(object):
     def __init__(self, memory):
         self.memory = memory
+        self.log = logging.getLogger('lrc.terminal')
         self.loop = asyncio.get_event_loop()
         self.buf = list()
 
@@ -73,6 +74,7 @@ class TerminalStdout(object):
         try:
             val = self.memory.read(0)
             if val != 0:
+                self.log.debug('read {}'.format(val))
                 self.buf.append(val)
                 self.memory.write(0, 0)
                 self.loop.call_soon(self.flush)
@@ -83,6 +85,7 @@ class TerminalStdout(object):
             self.flush()
 
     def flush(self):
+        self.log.debug("write {}".format(self.buf))
         sys.stdout.write(''.join(map(chr, self.buf)))
         self.buf = list()
 
