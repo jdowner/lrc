@@ -440,9 +440,9 @@ class Compiler(object):
 
 def main(argv=sys.argv[1:]):
     parser = argparse.ArgumentParser()
-    parser.add_argument("--file", "-f")
     parser.add_argument("--dump", "-d", action='store_true')
     parser.add_argument("--log-level", "-l", choices=('debug', 'info', 'error'), default='error')
+    parser.add_argument("file", nargs=argparse.REMAINDER)
 
     args = parser.parse_args(argv)
 
@@ -454,7 +454,7 @@ def main(argv=sys.argv[1:]):
 
     logging.getLogger('lrc').setLevel(logging_levels[args.log_level])
 
-    program = open(args.file).read()
+    program = open(args.file[0]).read()
 
     memory = Memory()
 
@@ -478,6 +478,7 @@ def main(argv=sys.argv[1:]):
             lo = mask & addr
             hi = (addr >> 16) & mask
             print('[{0:#06x}] {1:04x} {2:04x}'.format(index, hi, lo))
+
 
 if __name__ == "__main__":
     cfg = os.path.expandvars("${XDG_CONFIG_HOME}/lrc/logging.cfg")
