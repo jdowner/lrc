@@ -216,6 +216,22 @@ class Interpreter(object):
                 Halt.OPCODE:        self._halt,
                 }
 
+        self.mneumonics = {ins.OPCODE: ins.MNEUMONIC for ins in (
+            Load,
+            Increment,
+            Store,
+            Decrement,
+            Addition,
+            Subtraction,
+            Jump,
+            Move,
+            Compare,
+            BranchAbove,
+            BranchBelow,
+            Null,
+            Halt,
+            )}
+
     def run(self, memory):
         self.log.info('run start')
         loop = asyncio.get_event_loop()
@@ -229,10 +245,15 @@ class Interpreter(object):
 
         @asyncio.coroutine
         def tick():
-            self.log.debug('tick')
-
             try:
                 opcode, lo, hi = self.interpret(memory.read(memory.ptr))
+                self.log.debug("@{}: {} {} {}".format(
+                    memory.ptr,
+                    self.mneumonics[opcode],
+                    lo,
+                    hi,
+                    ))
+
                 self.opcodes[opcode](memory, lo, hi)
 
                 memory.ptr += 1
@@ -269,64 +290,52 @@ class Interpreter(object):
         return opcode, lo, hi
 
     def _load(self, memory, lo, hi):
-        self.log.debug("LDA {}".format(lo))
         memory.write_eax(lo)
 
     def _increment(self, memory, lo, hi):
-        self.log.debug("INC {}".format(lo))
         val = memory.read(lo)
         memory.write(lo, val + 1)
 
     def _decrement(self, memory, lo, hi):
-        self.log.debug("DEC {}".format(lo))
         val = memory.read(lo)
         memory.write(lo, val - 1)
 
     def _store(self, memory, lo, hi):
-        self.log.debug("STA {}".format(lo))
         val = memory.read_eax()
         memory.write(lo, val)
 
     def _addition(self, memory, lo, hi):
-        self.log.debug("ADD {} {}".format(lo, hi))
         val = (memory.read(lo) + memory.read(hi)) % 2**16
         memory.write(lo, val)
 
     def _subtraction(self, memory, lo, hi):
-        self.log.debug("SUB {} {}".format(lo, hi))
         val = (memory.read(lo) - hi) % 2**16
         memory.write(lo, val)
 
     def _jump(self, memory, lo, hi):
-        self.log.debug("JMP {}".format(lo))
         memory.ptr = lo - 1
 
     def _move(self, memory, lo, hi):
-        self.log.debug("MOV {} {}".format(lo, hi))
         val = memory.read(hi)
         memory.write(lo, val)
 
     def _compare(self, memory, lo, hi):
-        self.log.debug("CMP {} {}".format(lo, hi))
         vlo = memory.read(lo)
         vhi = memory.read(hi)
         memory.flag_cmp = 1 if vlo < vhi else 0
 
     def _branch_above(self, memory, lo, hi):
-        self.log.debug("BRA {} {}".format(lo, hi))
         if memory.flag_cmp == 0:
             memory.ptr = lo - 1
 
     def _branch_below(self, memory, lo, hi):
-        self.log.debug("BRB {} {}".format(lo, hi))
         if memory.flag_cmp == 1:
             memory.ptr = lo - 1
 
     def _null(self, memory, lo, hi):
-        self.log.debug("NUL")
+        pass
 
     def _halt(self, memory, lo, hi):
-        self.log.debug("HLT")
         raise Terminate()
 
 
