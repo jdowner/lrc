@@ -5,6 +5,7 @@ import asyncio
 import logging
 import logging.config
 import os
+import re
 import sys
 import traceback
 
@@ -115,18 +116,34 @@ class BaseOp(object):
 
 
 class NullaryOp(BaseOp):
+    def __init__(self, data):
+        super(NullaryOp, self).__init__()
+
     @property
     def value(self):
         return self.opcode
 
 
 class UnaryOp(BaseOp):
+    def __init__(self, data):
+        mask = 2**16 - 1
+        data = int(data)
+        lo = mask & data
+        super(UnaryOp, self).__init__(lo=lo)
+
     @property
     def value(self):
         return self.opcode + (self.lo << 4)
 
 
 class BinaryOp(BaseOp):
+    def __init__(self, data):
+        mask = 2**16 - 1
+        lo, hi = data
+        lo = mask & int(lo)
+        hi = mask & int(hi)
+        super(BinaryOp, self).__init__(lo=lo, hi=hi)
+
     @property
     def value(self):
         return self.opcode + (self.lo << 4) + (self.hi << 20)
@@ -216,6 +233,22 @@ class Interpreter(object):
                 Halt.OPCODE:        self._halt,
                 }
 
+        self.mneumonics = {ins.OPCODE: ins.MNEUMONIC for ins in (
+            Load,
+            Increment,
+            Store,
+            Decrement,
+            Addition,
+            Subtraction,
+            Jump,
+            Move,
+            Compare,
+            BranchAbove,
+            BranchBelow,
+            Null,
+            Halt,
+            )}
+
     def run(self, memory):
         self.log.info('run start')
         loop = asyncio.get_event_loop()
@@ -229,10 +262,15 @@ class Interpreter(object):
 
         @asyncio.coroutine
         def tick():
-            self.log.debug('tick')
-
             try:
                 opcode, lo, hi = self.interpret(memory.read(memory.ptr))
+                self.log.debug("@{}: {} {} {}".format(
+                    memory.ptr,
+                    self.mneumonics[opcode],
+                    lo,
+                    hi,
+                    ))
+
                 self.opcodes[opcode](memory, lo, hi)
 
                 memory.ptr += 1
@@ -269,171 +307,143 @@ class Interpreter(object):
         return opcode, lo, hi
 
     def _load(self, memory, lo, hi):
-        self.log.debug("LDA {}".format(lo))
         memory.write_eax(lo)
 
     def _increment(self, memory, lo, hi):
-        self.log.debug("INC {}".format(lo))
         val = memory.read(lo)
         memory.write(lo, val + 1)
 
     def _decrement(self, memory, lo, hi):
-        self.log.debug("DEC {}".format(lo))
         val = memory.read(lo)
         memory.write(lo, val - 1)
 
     def _store(self, memory, lo, hi):
-        self.log.debug("STA {}".format(lo))
         val = memory.read_eax()
         memory.write(lo, val)
 
     def _addition(self, memory, lo, hi):
-        self.log.debug("ADD {} {}".format(lo, hi))
         val = (memory.read(lo) + memory.read(hi)) % 2**16
         memory.write(lo, val)
 
     def _subtraction(self, memory, lo, hi):
-        self.log.debug("SUB {} {}".format(lo, hi))
         val = (memory.read(lo) - hi) % 2**16
         memory.write(lo, val)
 
     def _jump(self, memory, lo, hi):
-        self.log.debug("JMP {}".format(lo))
         memory.ptr = lo - 1
 
     def _move(self, memory, lo, hi):
-        self.log.debug("MOV {} {}".format(lo, hi))
         val = memory.read(hi)
         memory.write(lo, val)
 
     def _compare(self, memory, lo, hi):
-        self.log.debug("CMP {} {}".format(lo, hi))
         vlo = memory.read(lo)
         vhi = memory.read(hi)
         memory.flag_cmp = 1 if vlo < vhi else 0
 
     def _branch_above(self, memory, lo, hi):
-        self.log.debug("BRA {} {}".format(lo, hi))
         if memory.flag_cmp == 0:
             memory.ptr = lo - 1
 
     def _branch_below(self, memory, lo, hi):
-        self.log.debug("BRB {} {}".format(lo, hi))
         if memory.flag_cmp == 1:
             memory.ptr = lo - 1
 
     def _null(self, memory, lo, hi):
-        self.log.debug("NUL")
+        pass
 
     def _halt(self, memory, lo, hi):
-        self.log.debug("HLT")
         raise Terminate()
 
 
 class Compiler(object):
+    def __init__(self):
+        self._opcodes = {
+                'LDA': Load,
+                'STA': Store,
+                'INC': Increment,
+                'DEC': Decrement,
+                'ADD': Addition,
+                'SUB': Subtraction,
+                'JMP': Jump,
+                'MOV': Move,
+                'CMP': Compare,
+                'BRA': BranchAbove,
+                'BRB': BranchBelow,
+                'NUL': Null,
+                'HLT': Halt,
+                }
+        self._label_pattern = re.compile('^[a-zA-Z][-_0-9a-zA-Z]*:')
+        self._log = logging.getLogger('lrc.compiler')
+
     def compile(self, program):
-        log = logging.getLogger('lrc.compiler')
+        # Remove non-functional lines from the program
+        lines = self.prepare(program)
 
+        # Find any labels and create a map of their addresses
+        labels = self.find_labels(lines)
+
+        # Compile the instructions
         instructions = list()
-        for line in program.splitlines():
-            if line and not line.startswith('#'):
-                mneumonic = line[:3]
-                data = line[3:]
+        for line in lines:
+            if self.is_label(line):
+                instructions.append(Null(None))
+                continue
 
-                if mneumonic == 'LDA':
-                    value = int(data)
-                    instructions.append(Load(value))
-                    log.debug('LDA {}'.format(value))
-                    continue
+            if self.is_opcode(line):
+                opcode = self.parse_opcode(labels, line)
+                instructions.append(opcode)
+                continue
 
-                if mneumonic == 'STA':
-                    value = int(data)
-                    instructions.append(Store(value))
-                    log.debug('STA {}'.format(value))
-                    continue
-
-                if mneumonic == "INC":
-                    value = int(data)
-                    instructions.append(Increment(value))
-                    log.debug('INC {}'.format(value))
-                    continue
-
-                if mneumonic == "DEC":
-                    value = int(data)
-                    instructions.append(Decrement(value))
-                    log.debug('DEC {}'.format(value))
-                    continue
-
-                if mneumonic == "ADD":
-                    value1, value2 = data.split()
-                    value1 = int(value1)
-                    value2 = int(value2)
-                    instructions.append(Addition(value1, value2))
-                    log.debug('ADD {} {}'.format(value1, value2))
-                    continue
-
-                if mneumonic == "SUB":
-                    value1, value2 = data.split()
-                    value1 = int(value1)
-                    value2 = int(value2)
-                    instructions.append(Subtraction(value1, value2))
-                    log.debug('SUB {} {}'.format(value1, value2))
-                    continue
-
-                if mneumonic == "JMP":
-                    value = int(data)
-                    instructions.append(Jump(value))
-                    log.debug('JMP {}'.format(value))
-                    continue
-
-                if mneumonic == "MOV":
-                    value1, value2 = data.split()
-                    value1 = int(value1)
-                    value2 = int(value2)
-                    instructions.append(Move(value1, value2))
-                    log.debug('MOV {} {}'.format(value1, value2))
-                    continue
-
-                if mneumonic == "CMP":
-                    value1, value2 = data.split()
-                    value1 = int(value1)
-                    value2 = int(value2)
-                    instructions.append(Compare(value1, value2))
-                    log.debug('CMP {} {}'.format(value1, value2))
-                    continue
-
-                if mneumonic == "BRA":
-                    value = int(data)
-                    instructions.append(BranchAbove(value))
-                    log.debug('BRA {}'.format(value))
-                    continue
-
-                if mneumonic == "BRB":
-                    value = int(data)
-                    instructions.append(BranchBelow(value))
-                    log.debug('BRB {}'.format(value))
-                    continue
-
-                if mneumonic == "NUL":
-                    instructions.append(Null())
-                    log.debug('NUL')
-                    continue
-
-                if mneumonic == "HLT":
-                    instructions.append(Halt())
-                    log.debug('HLT')
-                    continue
-
-                raise UnrecognizedInstruction()
+            raise UnrecognizedInstruction(line)
 
         return instructions
+
+    def prepare(self, program):
+        lines = program.splitlines()
+        lines = [line.strip() for line in lines if not self.is_comment(line)]
+        return lines
+
+    def find_labels(self, lines):
+        labels = {}
+        for index, line in zip(range(len(lines)), lines):
+            if self.is_label(line):
+                label = self.parse_label(line)
+                assert label not in labels
+                labels[label] = index + Memory.ADDR_PRG
+
+        return labels
+
+    def is_comment(self, line):
+        return not line or line.startswith('#')
+
+    def is_label(self, line):
+        return self._label_pattern.match(line)
+
+    def is_opcode(self, line):
+        return line[:3] in self._opcodes and (not line[3:] or line[3] == ' ')
+
+    def parse_label(self, line):
+        return line[:line.find(':')]
+
+    def parse_opcode(self, labels, line):
+        mneumonic = line[:3]
+
+        data = line[3:].strip()
+        if data:
+            data = eval(data, None, labels)
+
+        opcode = self._opcodes[mneumonic](data)
+        self._log.debug('{} {}'.format(mneumonic, data))
+
+        return opcode
 
 
 def main(argv=sys.argv[1:]):
     parser = argparse.ArgumentParser()
-    parser.add_argument("--file", "-f")
     parser.add_argument("--dump", "-d", action='store_true')
     parser.add_argument("--log-level", "-l", choices=('debug', 'info', 'error'), default='error')
+    parser.add_argument("file", nargs=argparse.REMAINDER)
 
     args = parser.parse_args(argv)
 
@@ -445,7 +455,7 @@ def main(argv=sys.argv[1:]):
 
     logging.getLogger('lrc').setLevel(logging_levels[args.log_level])
 
-    program = open(args.file).read()
+    program = open(args.file[0]).read()
 
     memory = Memory()
 
@@ -469,6 +479,7 @@ def main(argv=sys.argv[1:]):
             lo = mask & addr
             hi = (addr >> 16) & mask
             print('[{0:#06x}] {1:04x} {2:04x}'.format(index, hi, lo))
+
 
 if __name__ == "__main__":
     cfg = os.path.expandvars("${XDG_CONFIG_HOME}/lrc/logging.cfg")
