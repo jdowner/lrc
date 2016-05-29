@@ -5,6 +5,7 @@ import asyncio
 import logging
 import logging.config
 import os
+import re
 import sys
 import traceback
 
@@ -115,18 +116,34 @@ class BaseOp(object):
 
 
 class NullaryOp(BaseOp):
+    def __init__(self, data):
+        super(NullaryOp, self).__init__()
+
     @property
     def value(self):
         return self.opcode
 
 
 class UnaryOp(BaseOp):
+    def __init__(self, data):
+        mask = 2**16 - 1
+        data = int(data)
+        lo = mask & data
+        super(UnaryOp, self).__init__(lo=lo)
+
     @property
     def value(self):
         return self.opcode + (self.lo << 4)
 
 
 class BinaryOp(BaseOp):
+    def __init__(self, data):
+        mask = 2**16 - 1
+        lo, hi = data
+        lo = mask & int(lo)
+        hi = mask & int(hi)
+        super(BinaryOp, self).__init__(lo=lo, hi=hi)
+
     @property
     def value(self):
         return self.opcode + (self.lo << 4) + (self.hi << 20)
@@ -340,102 +357,86 @@ class Interpreter(object):
 
 
 class Compiler(object):
+    def __init__(self):
+        self._opcodes = {
+                'LDA': Load,
+                'STA': Store,
+                'INC': Increment,
+                'DEC': Decrement,
+                'ADD': Addition,
+                'SUB': Subtraction,
+                'JMP': Jump,
+                'MOV': Move,
+                'CMP': Compare,
+                'BRA': BranchAbove,
+                'BRB': BranchBelow,
+                'NUL': Null,
+                'HLT': Halt,
+                }
+        self._label_pattern = re.compile('^[a-zA-Z][-_0-9a-zA-Z]*:')
+        self._log = logging.getLogger('lrc.compiler')
+
     def compile(self, program):
-        log = logging.getLogger('lrc.compiler')
+        # Remove non-functional lines from the program
+        lines = self.prepare(program)
 
+        # Find any labels and create a map of their addresses
+        labels = self.find_labels(lines)
+
+        # Compile the instructions
         instructions = list()
-        for line in program.splitlines():
-            if line and not line.startswith('#'):
-                mneumonic = line[:3]
-                data = line[3:]
+        for line in lines:
+            if self.is_label(line):
+                instructions.append(Null(None))
+                continue
 
-                if mneumonic == 'LDA':
-                    value = int(data)
-                    instructions.append(Load(value))
-                    log.debug('LDA {}'.format(value))
-                    continue
+            if self.is_opcode(line):
+                opcode = self.parse_opcode(labels, line)
+                instructions.append(opcode)
+                continue
 
-                if mneumonic == 'STA':
-                    value = int(data)
-                    instructions.append(Store(value))
-                    log.debug('STA {}'.format(value))
-                    continue
-
-                if mneumonic == "INC":
-                    value = int(data)
-                    instructions.append(Increment(value))
-                    log.debug('INC {}'.format(value))
-                    continue
-
-                if mneumonic == "DEC":
-                    value = int(data)
-                    instructions.append(Decrement(value))
-                    log.debug('DEC {}'.format(value))
-                    continue
-
-                if mneumonic == "ADD":
-                    value1, value2 = data.split()
-                    value1 = int(value1)
-                    value2 = int(value2)
-                    instructions.append(Addition(value1, value2))
-                    log.debug('ADD {} {}'.format(value1, value2))
-                    continue
-
-                if mneumonic == "SUB":
-                    value1, value2 = data.split()
-                    value1 = int(value1)
-                    value2 = int(value2)
-                    instructions.append(Subtraction(value1, value2))
-                    log.debug('SUB {} {}'.format(value1, value2))
-                    continue
-
-                if mneumonic == "JMP":
-                    value = int(data)
-                    instructions.append(Jump(value))
-                    log.debug('JMP {}'.format(value))
-                    continue
-
-                if mneumonic == "MOV":
-                    value1, value2 = data.split()
-                    value1 = int(value1)
-                    value2 = int(value2)
-                    instructions.append(Move(value1, value2))
-                    log.debug('MOV {} {}'.format(value1, value2))
-                    continue
-
-                if mneumonic == "CMP":
-                    value1, value2 = data.split()
-                    value1 = int(value1)
-                    value2 = int(value2)
-                    instructions.append(Compare(value1, value2))
-                    log.debug('CMP {} {}'.format(value1, value2))
-                    continue
-
-                if mneumonic == "BRA":
-                    value = int(data)
-                    instructions.append(BranchAbove(value))
-                    log.debug('BRA {}'.format(value))
-                    continue
-
-                if mneumonic == "BRB":
-                    value = int(data)
-                    instructions.append(BranchBelow(value))
-                    log.debug('BRB {}'.format(value))
-                    continue
-
-                if mneumonic == "NUL":
-                    instructions.append(Null())
-                    log.debug('NUL')
-                    continue
-
-                if mneumonic == "HLT":
-                    instructions.append(Halt())
-                    log.debug('HLT')
-                    continue
-
-                raise UnrecognizedInstruction()
+            raise UnrecognizedInstruction(line)
 
         return instructions
+
+    def prepare(self, program):
+        lines = program.splitlines()
+        lines = [line.strip() for line in lines if not self.is_comment(line)]
+        return lines
+
+    def find_labels(self, lines):
+        labels = {}
+        for index, line in zip(range(len(lines)), lines):
+            if self.is_label(line):
+                label = self.parse_label(line)
+                assert label not in labels
+                labels[label] = index + Memory.ADDR_PRG
+
+        return labels
+
+    def is_comment(self, line):
+        return not line or line.startswith('#')
+
+    def is_label(self, line):
+        return self._label_pattern.match(line)
+
+    def is_opcode(self, line):
+        return line[:3] in self._opcodes and (not line[3:] or line[3] == ' ')
+
+    def parse_label(self, line):
+        return line[:line.find(':')]
+
+    def parse_opcode(self, labels, line):
+        mneumonic = line[:3]
+
+        data = line[3:].strip()
+        if data:
+            data = eval(data, None, labels)
+
+        opcode = self._opcodes[mneumonic](data)
+        self._log.debug('{} {}'.format(mneumonic, data))
+
+        return opcode
 
 
 def main(argv=sys.argv[1:]):
