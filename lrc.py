@@ -215,6 +215,25 @@ class Halt(NullaryOp):
 
 
 class Interpreter(object):
+    class Data(object):
+        MASK_VAL = (2 << 12) - 1
+        MASK_REF = 2 << 12
+
+        def __init__(self, data):
+            self.data = data
+
+        def __repr__(self):
+            return repr(self.data)
+
+        @property
+        def value(self):
+            return self.data & Interpreter.Data.MASK_VAL
+
+        @property
+        def is_ref(self):
+            return self.data & Interpreter.Data.MASK_REF
+
+
     def __init__(self):
         self.log = logging.getLogger('lrc.interpreter')
         self.opcodes = {
