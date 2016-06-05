@@ -130,3 +130,44 @@ class BranchBelow(UnaryOp):
 class Halt(NullaryOp):
     MNEUMONIC = "HLT"
     OPCODE = 12
+
+
+class Memory(object):
+    ADDR_IO  =  0 # start of memory reserved for device I/O
+    ADDR_REG = 17 # start of memory reserved for registers
+    ADDR_FLG = 25 # start of memory reserved for flags
+    ADDR_PRG = 33 # start of memory reserved for programs
+
+    def __init__(self):
+        self._ram = dict()
+        self.ptr = Memory.ADDR_PRG
+
+    def __len__(self):
+        return max(self._ram) + 1 if self._ram else 0
+
+    def __iter__(self):
+        for index in range(len(self)):
+            yield self.read(index)
+
+    def read(self, index):
+        assert 0 <= index
+        return self._ram[index] if index in self._ram else 0
+
+    def write(self, index, value):
+        assert 0 <= index
+        assert 0 <= value < 2**32
+        self._ram[index] = value
+
+    def read_eax(self):
+        return self.read(Memory.ADDR_REG)
+
+    def write_eax(self, value):
+        self.write(Memory.ADDR_REG, value)
+
+    @property
+    def flag_cmp(self):
+        return self.read(Memory.ADDR_FLG)
+
+    @flag_cmp.setter
+    def flag_cmp(self, val):
+        self.write(Memory.ADDR_FLG, val)
