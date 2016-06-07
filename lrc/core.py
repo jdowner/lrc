@@ -1,6 +1,14 @@
 import collections
 
 
+class Terminate(Exception):
+    pass
+
+
+class SegmentationFault(Exception):
+    pass
+
+
 class Operand(collections.namedtuple("Operand", "value ref")):
     MASK_REF = 2**12
     MASK_VAL = 2**12 - 1
@@ -23,113 +31,143 @@ class Operand(collections.namedtuple("Operand", "value ref")):
         return value
 
 
-class BaseOp(collections.namedtuple("BaseOp", "mneumonic opcode value lo hi")):
-    def __new__(cls, mneumonic, opcode, value, lo=0, hi=0):
-        return super(BaseOp, cls).__new__(cls, mneumonic, opcode, value, lo, hi)
+class Opcode(collections.namedtuple("Opcode", "mneumonic opcode value lo hi")):
+    """
+    Each instruction is designed to be 32 bits long with the following
+    structure,
 
+        OOOOLLLLLLLLLLLLLLLLHHHHHHHHHHHHHHHH
 
-class NullaryOp(BaseOp):
-    def __new__(cls, data):
-        return super(NullaryOp, cls).__new__(
+        O: instruction
+        L: 'lo' operand
+        H: 'hi' operand
+
+    """
+
+    def __new__(cls, lo, hi):
+        value = (cls.OPCODE << 28) + (int(lo) << 14) + int(hi)
+        return super(Opcode, cls).__new__(
                 cls,
-                mneumonic=cls.MNEUMONIC,
-                opcode=cls.OPCODE,
-                value=cls.OPCODE,
+                cls.MNEUMONIC,
+                cls.OPCODE,
+                value,
+                int(lo),
+                int(hi),
                 )
 
 
-class UnaryOp(BaseOp):
-    def __new__(cls, data):
-        lo = int(data)
-        value = cls.OPCODE + (lo << 4)
-        return super(UnaryOp, cls).__new__(
-                cls,
-                mneumonic=cls.MNEUMONIC,
-                opcode=cls.OPCODE,
-                value=value,
-                lo=lo,
-                )
-
-
-class BinaryOp(BaseOp):
-    def __new__(cls, data):
-        lo, hi = data
-        lo = int(lo)
-        hi = int(hi)
-        value = cls.OPCODE  + (int(lo) << 4) + (int(hi) << 20)
-        return super(BinaryOp, cls).__new__(
-                cls,
-                mneumonic=cls.MNEUMONIC,
-                opcode=cls.OPCODE,
-                value=value,
-                lo=lo,
-                hi=hi,
-                )
-
-
-class Null(NullaryOp):
+class Null(Opcode):
     MNEUMONIC = "NUL"
     OPCODE = 0
 
+    def execute(self, memory):
+        pass
 
-class Store(UnaryOp):
+
+class Store(Opcode):
     MNEUMONIC = "STA"
     OPCODE = 1
 
+    def execute(self, memory):
+        val = memory.read_eax()
+        memory.write(self.lo, val)
 
-class Load(UnaryOp):
+
+class Load(Opcode):
     MNEUMONIC = "LDA"
     OPCODE = 2
 
+    def execute(self, memory):
+        memory.write_eax(self.lo)
 
-class Increment(UnaryOp):
+
+class Increment(Opcode):
     MNEUMONIC = "INC"
     OPCODE = 3
 
+    def execute(self, memory):
+        val = memory.read(self.lo)
+        memory.write(self.lo, val + 1)
 
-class Decrement(UnaryOp):
+
+class Decrement(Opcode):
     MNEUMONIC = "DEC"
     OPCODE = 4
 
+    def execute(self, memory):
+        val = memory.read(self.lo)
+        memory.write(self.lo, val - 1)
 
-class Addition(BinaryOp):
+
+class Addition(Opcode):
     MNEUMONIC = "ADD"
     OPCODE = 5
 
+    def execute(self, memory):
+        val = (memory.read(self.lo) + memory.read(self.hi)) % 2**16
+        memory.write(self.lo, val)
 
-class Subtraction(BinaryOp):
+
+class Subtraction(Opcode):
     MNEUMONIC = "SUB"
     OPCODE = 6
 
+    def execute(self, memory):
+        val = (memory.read(self.lo) - self.hi) % 2**16
+        memory.write(self.lo, val)
 
-class Jump(UnaryOp):
+
+class Jump(Opcode):
     MNEUMONIC = "JMP"
     OPCODE = 7
 
+    def execute(self, memory):
+        memory.ptr = self.lo - 1
 
-class Move(BinaryOp):
+
+class Move(Opcode):
     MNEUMONIC = "MOV"
     OPCODE = 8
 
+    def execute(self, memory):
+        val = memory.read(self.hi)
+        memory.write(self.lo, val)
 
-class Compare(BinaryOp):
+
+class Compare(Opcode):
     MNEUMONIC = "CMP"
     OPCODE = 9
 
+    def execute(self, memory):
+        vlo = memory.read(self.lo)
+        vhi = memory.read(self.hi)
+        memory.flag_cmp = 1 if vlo < vhi else 0
 
-class BranchAbove(UnaryOp):
+
+class BranchAbove(Opcode):
     MNEUMONIC = "BRA"
     OPCODE = 10
 
+    def execute(self, memory):
+        if memory.flag_cmp == 0:
+            memory.ptr = self.lo - 1
 
-class BranchBelow(UnaryOp):
+
+class BranchBelow(Opcode):
     MNEUMONIC = "BRB"
     OPCODE = 11
 
+    def execute(self, memory):
+        if memory.flag_cmp == 1:
+            memory.ptr = self.lo - 1
 
-class Halt(NullaryOp):
+
+class Halt(Opcode):
     MNEUMONIC = "HLT"
     OPCODE = 12
+
+    def execute(self, memory):
+        raise Terminate()
 
 
 class Memory(object):
@@ -163,6 +201,10 @@ class Memory(object):
 
     def write_eax(self, value):
         self.write(Memory.ADDR_REG, value)
+
+    def load_program(self, prog):
+        for index, instruction in zip(range(len(prog)), prog):
+            self.write(Memory.ADDR_PRG + index, instruction.value)
 
     @property
     def flag_cmp(self):
